@@ -68,6 +68,17 @@ jobs:
           sed -i 's|keystore/debug_password=""|keystore/debug_password="android"|' export_presets.cfg
           grep keystore/debug export_presets.cfg
 
+      - name: Diagnose export setup
+        run: |
+          echo "--- template dir ---"
+          ls -la "$HOME/.local/share/godot/export_templates/4.3.stable/" || true
+          echo "--- preset ---"
+          cat export_presets.cfg
+          echo "--- sdk / java ---"
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "JAVA_HOME=$JAVA_HOME"
+          ls "$ANDROID_HOME" || true
+
       - name: Export debug APK
         run: |
           mkdir -p build
