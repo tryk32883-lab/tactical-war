@@ -8,13 +8,33 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    container:
-      image: barichello/godot-ci:4.3
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: |
+          yes | sdkmanager --licenses > /dev/null
+          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+
+      - name: Set up Godot 4.3 with export templates
+        uses: chickensoft-games/setup-godot@v2
+        with:
+          version: 4.3
+          use-dotnet: false
+          include-templates: true
+
       - name: Export debug APK
         run: |
+          export GODOT_ANDROID_SDK_PATH="$ANDROID_HOME"
           mkdir -p build
           godot --headless --verbose --export-debug "Android" build/tactical-war.apk
 
