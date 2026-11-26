@@ -37,8 +37,6 @@ jobs:
           mkdir -p "$TPL_DIR"
           unzip -q Godot_v4.3-stable_export_templates.tpz -d tpl
           mv tpl/templates/* "$TPL_DIR/"
-          echo "--- templates ---"
-          ls -la "$TPL_DIR"
           godot --version
 
       - name: Create debug keystore
@@ -67,7 +65,6 @@ jobs:
           sed -i "s|keystore/debug=\"\"|keystore/debug=\"$HOME/debug.keystore\"|" export_presets.cfg
           sed -i 's|keystore/debug_user=""|keystore/debug_user="androiddebugkey"|' export_presets.cfg
           sed -i 's|keystore/debug_password=""|keystore/debug_password="android"|' export_presets.cfg
-          echo "--- preset keystore lines ---"
           grep keystore/debug export_presets.cfg
 
       - name: Export debug APK
@@ -79,11 +76,10 @@ jobs:
           echo "exit code: $code"
           exit $code
 
-      - name: Show key errors from export log
+      - name: Show export log without noise
         if: always()
         run: |
-          echo "=== lines with errors / missing / template / keystore / sdk / java ==="
-          grep -n -i -E "error|fail|missing|not found|template|keystore|sdk|java|invalid|cannot" export.log | grep -v "is not exposed" | head -80 || true
+          grep -v "is not exposed" export.log | tail -100
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
