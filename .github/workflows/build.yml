@@ -22,7 +22,9 @@ jobs:
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           if [ ! -x "$SDKMANAGER" ]; then SDKMANAGER="$(which sdkmanager)"; fi
           yes | "$SDKMANAGER" --licenses > /dev/null || true
-          "$SDKMANAGER" "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+          "$SDKMANAGER" "platform-tools" \
+            "platforms;android-33" "platforms;android-34" \
+            "build-tools;33.0.2" "build-tools;34.0.0" "build-tools;35.0.0"
 
       - name: Install Godot 4.3 and export templates
         run: |
@@ -72,12 +74,15 @@ jobs:
         run: |
           echo "--- template dir ---"
           ls -la "$HOME/.local/share/godot/export_templates/4.3.stable/" || true
-          echo "--- preset ---"
-          cat export_presets.cfg
           echo "--- sdk / java ---"
           echo "ANDROID_HOME=$ANDROID_HOME"
           echo "JAVA_HOME=$JAVA_HOME"
-          ls "$ANDROID_HOME" || true
+          echo "--- build-tools ---"
+          ls "$ANDROID_HOME/build-tools" || true
+          echo "--- platforms ---"
+          ls "$ANDROID_HOME/platforms" || true
+          echo "--- godot editor settings ---"
+          cat "$HOME/.config/godot/editor_settings-4.3.tres" || true
 
       - name: Export debug APK
         run: |
