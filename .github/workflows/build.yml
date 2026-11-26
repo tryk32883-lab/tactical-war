@@ -1,0 +1,25 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: barichello/godot-ci:4.3
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Export debug APK
+        run: |
+          mkdir -p build
+          godot --headless --verbose --export-debug "Android" build/tactical-war.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: tactical-war-apk
+          path: build/tactical-war.apk
