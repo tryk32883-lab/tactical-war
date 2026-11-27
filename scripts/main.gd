@@ -1,6 +1,6 @@
 extends Node2D
 
-# Срез: карта 300 x 300 м, пехота и здания.
+# Срез: карта 300 x 300 м, пехота и дома.
 # 1 метр = PX пикселей мира.
 
 const PX: float = 4.0
@@ -10,15 +10,55 @@ const SPEED: float = 3.0
 const SELECT_RADIUS: float = 3.0
 const GRID_STEP: float = 10.0
 const TAP_MAX_MOVE: float = 15.0
+const CHUNK_SIZE: float = 50.0
+const SPRITE_SIZE: float = 14.0
+const FRAME_TIME: float = 0.12
+const HOUSE_COUNT: int = 12
+
+const INFANTRY_TEX_PATH: String = "res://assets/infantry.png"
+const HOUSE_TEX_PATH: String = "res://assets/house_tiles.png"
+const CELL: float = 64.0
+const HOUSE_W: float = 104.0
+const HOUSE_H: float = 80.0
+const HOUSE_SCALE: float = 0.5
+
+# Кадры листа (колонка, строка), считаем с нуля.
+const STAND_ARMED: Vector2i = Vector2i(5, 8)
+const PRONE_ARMED: Vector2i = Vector2i(0, 7)
+const SHOOT_PRONE: Vector2i = Vector2i(0, 8)
+const SUPPRESSED: Vector2i = Vector2i(5, 0)
+const DEAD: Vector2i = Vector2i(5, 2)
+const WALK_ARMED: Array = [
+	Vector2i(0, 9), Vector2i(1, 9), Vector2i(2, 9),
+	Vector2i(3, 9), Vector2i(4, 9), Vector2i(5, 9),
+]
+const CRAWL_ARMED: Array = [
+	Vector2i(1, 7), Vector2i(2, 7), Vector2i(3, 7),
+	Vector2i(4, 7), Vector2i(5, 7),
+]
+const WOUNDED: Array = [
+	Vector2i(0, 1), Vector2i(1, 1), Vector2i(2, 1),
+	Vector2i(3, 1), Vector2i(4, 1), Vector2i(5, 1),
+]
 
 var cam: Camera2D
+var infantry_tex: Texture2D
+var house_tex: Texture2D
 var soldiers: Array = []
+var houses: Array = []
 var touches: Dictionary = {}
 var moved_during_touch: float = 0.0
 var last_pinch_dist: float = 0.0
 
 
 func _ready() -> void:
+	infantry_tex = load(INFANTRY_TEX_PATH) as Texture2D
+	house_tex = load(HOUSE_TEX_PATH) as Texture2D
+	if infantry_tex == null:
+		push_error("Нет спрайта пехоты: " + INFANTRY_TEX_PATH)
+	if house_tex == null:
+		push_error("Нет спрайтов домов: " + HOUSE_TEX_PATH)
+
 	cam = Camera2D.new()
 	cam.position = Vector2(MAP_SIZE, MAP_SIZE) * PX * 0.5
 	cam.zoom = Vector2(1.5, 1.5)
@@ -33,17 +73,61 @@ func _ready() -> void:
 			else:
 				x = randf_range(220.0, 280.0)
 			var y: float = randf_range(20.0, 280.0)
+			var r: float = randf()
+			var st: String = "stand"
+			if r < 0.02:
+				st = "dead"
+			elif r < 0.06:
+				st = "wounded"
+			elif r < 0.12:
+				st = "suppressed"
+			elif r < 0.20:
+				st = "prone"
 			soldiers.append({
 				"pos": Vector2(x, y),
 				"target": Vector2.ZERO,
 				"has_target": false,
 				"team": team,
 				"selected": false,
+				"state": st,
+				"anim_t": randf() * 2.0,
 			})
+
+	for i in HOUSE_COUNT:
+		houses.append({
+			"pos": Vector2(randf_range(110.0, 190.0), randf_range(20.0, 280.0)),
+			"variant": i % 4,
+		})
+
+
+func chunk_of(p: Vector2) -> Vector2i:
+	return Vector2i(floor(p.x / CHUNK_SIZE), floor(p.y / CHUNK_SIZE))
+
+
+func get_frames(s: Dictionary) -> Array:
+	var moving: bool = s["has_target"]
+	match s["state"]:
+		"dead":
+			return [DEAD]
+		"wounded":
+			return WOUNDED
+		"prone":
+			if moving:
+				return CRAWL_ARMED
+			return [PRONE_ARMED]
+		"suppressed":
+			if moving:
+				return CRAWL_ARMED
+			return [SUPPRESSED]
+		_:
+			if moving:
+				return WALK_ARMED
+			return [STAND_ARMED]
 
 
 func _process(delta: float) -> void:
 	for s in soldiers:
+		s["anim_t"] = float(s["anim_t"]) + delta
 		if not s["has_target"]:
 			continue
 		var pos: Vector2 = s["pos"] as Vector2
@@ -63,33 +147,49 @@ func _draw() -> void:
 	var view: Rect2 = Rect2(cam.position - view_size * 0.5, view_size)
 	var map_rect: Rect2 = Rect2(0.0, 0.0, MAP_SIZE * PX, MAP_SIZE * PX)
 
-	# Земля
 	draw_rect(map_rect, Color(0.25, 0.3, 0.2))
 
-	# Сетка: только видимые линии, шаг 10 м
-	var grid_col: Color = Color(1, 1, 1, 0.08)
+	var grid_col: Color = Color(1, 1, 1, 0.05)
 	var step_px: float = GRID_STEP * PX
-	var x: float = floorf(view.position.x / step_px) * step_px
+	var x: float = floor(view.position.x / step_px) * step_px
 	while x <= view.end.x:
 		draw_line(Vector2(x, view.position.y), Vector2(x, view.end.y), grid_col)
 		x += step_px
-	var y: float = floorf(view.position.y / step_px) * step_px
+	var y: float = floor(view.position.y / step_px) * step_px
 	while y <= view.end.y:
 		draw_line(Vector2(view.position.x, y), Vector2(view.end.x, y), grid_col)
 		y += step_px
 
-	# Пехота (только видимая)
+	if house_tex != null:
+		for h in houses:
+			var hp: Vector2 = (h["pos"] as Vector2) * PX
+			var size: Vector2 = Vector2(HOUSE_W, HOUSE_H) * HOUSE_SCALE
+			if not view.grow(size.length()).has_point(hp):
+				continue
+			var v: int = h["variant"]
+			var src: Rect2 = Rect2((v % 2) * HOUSE_W, (v / 2) * HOUSE_H, HOUSE_W, HOUSE_H)
+			var dest: Rect2 = Rect2(hp - size * 0.5, size)
+			draw_texture_rect_region(house_tex, dest, src)
+
 	for s in soldiers:
 		var p: Vector2 = (s["pos"] as Vector2) * PX
-		if not view.grow(10.0).has_point(p):
+		if not view.grow(20.0).has_point(p):
 			continue
-		var color: Color = Color(0.2, 0.5, 1.0) if s["team"] == 0 else Color(1.0, 0.3, 0.3)
+		var frames: Array = get_frames(s)
+		var idx: int = int(float(s["anim_t"]) / FRAME_TIME) % frames.size()
+		var cell: Vector2i = frames[idx]
+		if infantry_tex != null:
+			var src_s: Rect2 = Rect2(cell.x * CELL, cell.y * CELL, CELL, CELL)
+			var dest_s: Rect2 = Rect2(p - Vector2.ONE * SPRITE_SIZE * 0.5, Vector2.ONE * SPRITE_SIZE)
+			draw_texture_rect_region(infantry_tex, dest_s, src_s)
+		else:
+			var color: Color = Color(0.2, 0.5, 1.0) if s["team"] == 0 else Color(1.0, 0.3, 0.3)
+			draw_circle(p, 0.4 * PX, color)
 		if s["has_target"]:
 			var t: Vector2 = (s["target"] as Vector2) * PX
 			draw_line(p, t, Color(1, 1, 1, 0.3), 1.0)
-		draw_circle(p, 0.4 * PX, color)
 		if s["selected"]:
-			draw_arc(p, 0.9 * PX, 0.0, TAU, 16, Color(1, 1, 0), 1.5)
+			draw_arc(p, SPRITE_SIZE * 0.6, 0.0, TAU, 16, Color(1, 1, 0), 1.5)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -127,12 +227,13 @@ func _handle_tap(screen_pos: Vector2) -> void:
 	var world: Vector2 = get_viewport().get_canvas_transform().affine_inverse() * screen_pos
 	var world_m: Vector2 = world / PX
 
-	# 1) Тап по своему солдату — выбрать его
 	var hit: int = -1
 	for i in soldiers.size():
 		var s: Dictionary = soldiers[i]
+		if s["team"] != 0 or s["state"] == "dead":
+			continue
 		var spos: Vector2 = s["pos"] as Vector2
-		if s["team"] == 0 and spos.distance_to(world_m) <= SELECT_RADIUS:
+		if spos.distance_to(world_m) <= SELECT_RADIUS:
 			hit = i
 			break
 	if hit >= 0:
@@ -140,10 +241,10 @@ func _handle_tap(screen_pos: Vector2) -> void:
 		soldiers[hit]["selected"] = true
 		return
 
-	# 2) Тап по земле — приказ движения выбранным
 	var selected: Array = []
 	for i in soldiers.size():
-		if soldiers[i]["selected"]:
+		var s2: Dictionary = soldiers[i]
+		if s2["selected"] and s2["state"] != "dead" and s2["state"] != "wounded":
 			selected.append(i)
 	if selected.is_empty():
 		return
@@ -159,4 +260,5 @@ func _handle_tap(screen_pos: Vector2) -> void:
 func _clear_selection() -> void:
 	for s in soldiers:
 		s["selected"] = false
+
 
